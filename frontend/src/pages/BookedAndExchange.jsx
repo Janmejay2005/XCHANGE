@@ -1,0 +1,1576 @@
+import React, { useState } from 'react';
+import { RefreshCw, Plus, Home, Search, X, CheckCircle, XCircle, MoreHorizontal, FileText, ShoppingBag, AlertTriangle } from 'lucide-react';
+import { CurrencyAmount } from '../components/common/UIComponents';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import PdfExportModal from '../components/common/PdfExportModal';
+
+export default function BookedAndExchange() {
+  const { globalSearch, selectedDate } = useOutletContext() || {};
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'bookings' | 'exchanges'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [purchasedBy, setPurchasedBy] = useState('All');
+  const [mobileBrand, setMobileBrand] = useState('All');
+  const [activeMenuId, setActiveMenuId] = useState(null);
+  const [expandedImage, setExpandedImage] = useState(null);
+
+  // Sell Mobile Modal State
+  const [isSellModalOpen, setIsSellModalOpen] = useState(false);
+  const [selectedSellRow, setSelectedSellRow] = useState(null);
+  const [sellError, setSellError] = useState('');
+  const [sellForm, setSellForm] = useState({
+    model: '',
+    unit: 1,
+    soldBy: 'Jeet Khubchandani',
+    soldTo: '',
+    paymentType: 'COMPLETE',
+    soldPrice: '',
+    totalAmount: '',
+    paidAmount: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  const [exportModalConfig, setExportModalConfig] = useState({
+    isOpen: false,
+    title: '',
+    headers: [],
+    rows: [],
+    filename: '',
+    summaryInfo: []
+  });
+
+  // Book Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [bookForm, setBookForm] = useState({
+    // Exchange Old Phone
+    oldBrand: 'Samsung',
+    oldModel: '',
+    oldStorage: '128',
+    oldRam: '8',
+    oldAmount: '0',
+    oldPayBy: 'Staff',
+    oldImage: '',
+
+    // Booking New Phone
+    exchangeValue: '0',
+    newBrand: 'Google Pixel',
+    customBrand: '',
+    newModel: '',
+    newStorage: '256',
+    newRam: '12',
+    newPayBy: '',
+    platform: 'Offline / Store',
+    platformRemarks: '',
+    purchasedAmount: '',
+    via: 'Cash',
+    accountId: ''
+  });
+
+  // Old In-hand devices list for trade-in selector
+  const [oldInHandDevices, setOldInHandDevices] = useState([]);
+
+  React.useEffect(() => {
+    const fetchLiveInHandStock = async () => {
+      const sampleOldInHand = [];
+
+      let apiDevices = [];
+      try {
+        const res = await deviceService.getDevices({ status: 'OLD_IN_HAND' });
+        apiDevices = Array.isArray(res) ? res : (res?.data || []);
+      } catch (e) {}
+
+      const exchangePool = JSON.parse(localStorage.getItem('mrx_exchange_pool') || '[]');
+      const localInHand = JSON.parse(localStorage.getItem('mrx_old_in_hand_stock') || '[]');
+      const localDevices = JSON.parse(localStorage.getItem('mrx_devices') || '[]').filter(d => d.status === 'OLD_IN_HAND');
+      const localInventoryInHand = JSON.parse(localStorage.getItem('mrx_old_inventory') || '[]').filter(d => d.status === 'OLD_IN_HAND');
+
+      const allRaw = [...exchangePool, ...localInHand, ...localDevices, ...localInventoryInHand, ...apiDevices, ...sampleOldInHand];
+      const seen = new Set();
+      const formatted = [];
+
+      for (const item of allRaw) {
+        if (!item) continue;
+        const itemId = item.id || item.device_code || `dev_${Math.random()}`;
+        const brand = item.brand || '';
+        const model = item.model || '';
+        const storage = item.storage || 128;
+        const ram = item.ram || 6;
+        const amount = item.purchase_amount || item.amount || 0;
+        const paidBy = item.paid_by || item.purchasedBy || 'Staff';
+        const img = item.image_url || (item.images && item.images[0]) || item.image || 'https://images.unsplash.com/photo-1591337676887-a217a6970a8a?w=200';
+
+        const fingerprint = `${itemId}|${brand.trim().toLowerCase()}|${model.trim().toLowerCase()}|${storage}|${ram}|${amount}`;
+
+        if (!seen.has(fingerprint)) {
+          seen.add(fingerprint);
+          formatted.push({
+            id: itemId,
+            brand,
+            model,
+            storage,
+            ram,
+            amount,
+            paid_by: paidBy,
+            image_url: img
+          });
+        }
+      }
+
+      setOldInHandDevices(formatted);
+    };
+
+    fetchLiveInHandStock();
+    window.addEventListener('storage', fetchLiveInHandStock);
+    window.addEventListener('mrx_inventory_updated', fetchLiveInHandStock);
+    window.addEventListener('mrx_exchange_pool_updated', fetchLiveInHandStock);
+    return () => {
+      window.removeEventListener('storage', fetchLiveInHandStock);
+      window.removeEventListener('mrx_inventory_updated', fetchLiveInHandStock);
+      window.removeEventListener('mrx_exchange_pool_updated', fetchLiveInHandStock);
+    };
+  }, [isModalOpen]);
+
+  const handleSelectOldInHandDevice = (devId) => {
+    const dev = oldInHandDevices.find((d, idx) => String(d.id || idx) === String(devId));
+    if (dev) {
+      setBookForm(prev => ({
+        ...prev,
+        oldBrand: dev.brand || prev.oldBrand,
+        oldModel: dev.model || prev.oldModel,
+        oldStorage: String(dev.storage || prev.oldStorage),
+        oldRam: String(dev.ram || prev.oldRam),
+        oldAmount: String(dev.amount || prev.oldAmount),
+        oldPayBy: dev.paid_by || prev.oldPayBy,
+        oldImage: dev.image_url || dev.image || (dev.images && dev.images[0]) || ''
+      }));
+    }
+  };
+
+  const defaultExchanges = [
+    { id: 1, date: '15 Sep 2026', newBrand: 'Apple', newModel: 'iPhone 15 Pro Max', newStorage: 256, newRam: 8, newColor: 'Natural Titanium', newPurchasedBy: 'Jeet Khubchandani', newAmount: 125000, oldBrand: 'Samsung', oldModel: 'S23 Ultra', oldStorage: 256, oldRam: 12, oldColor: 'Phantom Black', oldPurchasedBy: 'Jeet Khubchandani', oldAmount: 58000, oldImage: 'https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=200', status: 'Booked' },
+    { id: 2, date: '14 Sep 2026', newBrand: 'Samsung', newModel: 'Galaxy S24 Ultra', newStorage: 512, newRam: 12, newColor: 'Titanium Gray', newPurchasedBy: 'Sonal Wadwani', newAmount: 118000, oldBrand: 'OnePlus', oldModel: '11', oldStorage: 256, oldRam: 16, oldColor: 'Eternal Green', oldPurchasedBy: 'Sonal Wadwani', oldAmount: 32000, oldImage: 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=200', status: 'Booked' },
+    { id: 3, date: '13 Sep 2026', newBrand: 'Google Pixel', newModel: 'Pixel 8 Pro', newStorage: 256, newRam: 12, newColor: 'Obsidian', newPurchasedBy: 'Rohit Kumar', newAmount: 92000, oldBrand: 'Google Pixel', oldModel: 'Pixel 6 Pro', oldStorage: 128, oldRam: 12, oldColor: 'Stormy Black', oldPurchasedBy: 'Rohit Kumar', oldAmount: 26000, oldImage: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=200', status: 'Booked' },
+    { id: 4, date: '12 Sep 2026', newBrand: 'OnePlus', newModel: 'OnePlus 12', newStorage: 512, newRam: 16, newColor: 'Flowy Emerald', newPurchasedBy: 'Neha', newAmount: 64999, oldBrand: 'Xiaomi', oldModel: '12 Pro', oldStorage: 256, oldRam: 12, oldColor: 'Blue', oldPurchasedBy: 'Neha', oldAmount: 22000, status: 'Booked' },
+    { id: 5, date: '11 Sep 2026', newBrand: 'Vivo', newModel: 'X100 Pro', newStorage: 512, newRam: 16, newColor: 'Asteroid Black', newPurchasedBy: 'Aman', newAmount: 89999, oldBrand: 'Vivo', oldModel: 'V27 Pro', oldStorage: 256, oldRam: 12, oldColor: 'Magic Blue', oldPurchasedBy: 'Aman', oldAmount: 24000, status: 'Booked' },
+    { id: 6, date: '10 Sep 2026', newBrand: 'Nothing', newModel: 'Phone (2)', newStorage: 256, newRam: 12, newColor: 'Dark Gray', newPurchasedBy: 'Karan', newAmount: 44999, oldBrand: 'Nothing', oldModel: 'Phone (1)', oldStorage: 128, oldRam: 8, oldColor: 'White', oldPurchasedBy: 'Karan', oldAmount: 18000, status: 'Booked' },
+    { id: 7, date: '09 Sep 2026', newBrand: 'Motorola', newModel: 'Edge 50 Ultra', newStorage: 512, newRam: 16, newColor: 'Peach Fuzz', newPurchasedBy: 'Vikram', newAmount: 59999, oldBrand: 'Motorola', oldModel: 'Edge 40', oldStorage: 256, oldRam: 8, oldColor: 'Eclipse Black', oldPurchasedBy: 'Vikram', oldAmount: 20000, status: 'Booked' },
+    { id: 8, date: '08 Sep 2026', newBrand: 'Xiaomi', newModel: '14 Ultra', newStorage: 512, newRam: 16, newColor: 'Black', newPurchasedBy: 'Ananya', newAmount: 99999, oldBrand: 'Oppo', oldModel: 'Reno 10 Pro+', oldStorage: 256, oldRam: 12, oldColor: 'Silver', oldPurchasedBy: 'Ananya', oldAmount: 29000, status: 'Booked' }
+  ];
+
+  const getStoredExchanges = () => {
+    try {
+      const storedStr = localStorage.getItem('mrx_exchanges');
+      const storedExchanges = storedStr ? JSON.parse(storedStr) : [];
+      const storedOldHandBooked = JSON.parse(localStorage.getItem('mrx_old_in_hand_stock') || '[]').filter(d => d.status === 'Booked' || d.status === 'BOOKED');
+
+      const formattedOldHand = storedOldHandBooked.map(d => ({
+        id: d.exchangeId || d.id || `EXCH-${Date.now()}`,
+        date: d.intake_date || d.date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        newBrand: d.newBrand || d.brand,
+        newModel: d.newModel || d.model,
+        newStorage: d.newStorage || d.storage || 128,
+        newRam: d.newRam || d.ram || 8,
+        newColor: d.newColor || d.colour || '-',
+        newPurchasedBy: d.newPurchasedBy || 'Customer',
+        newAmount: Number(d.newAmount || d.purchase_amount || 0),
+        oldBrand: d.brand,
+        oldModel: d.model,
+        oldStorage: d.storage || 128,
+        oldRam: d.ram || 8,
+        oldColor: d.colour || '-',
+        oldPurchasedBy: d.paid_by || 'Staff',
+        oldAmount: Number(d.purchase_amount || d.amount || 0),
+        oldImage: d.image_url || '',
+        platform: d.platform || 'Store',
+        exchangeValue: (d.exchangeValue !== undefined && d.exchangeValue !== null && d.exchangeValue !== '') ? Number(d.exchangeValue) : Number(d.purchase_amount || d.amount || 0),
+        status: d.status || 'Booked'
+      }));
+
+      const combined = [...storedExchanges, ...formattedOldHand];
+      if (combined.length > 0) {
+        const seenMap = new Map();
+        for (const item of combined) {
+          if (!item) continue;
+          const key = String(item.id || `${item.newBrand}_${item.newModel}_${item.oldBrand}_${item.oldModel}`);
+          if (!seenMap.has(key)) {
+            seenMap.set(key, item);
+          }
+        }
+        return Array.from(seenMap.values());
+      }
+    } catch (e) {}
+    return defaultExchanges;
+  };
+
+  const [exchanges, setExchanges] = useState(getStoredExchanges);
+
+  React.useEffect(() => {
+    const syncExchanges = () => {
+      setExchanges(getStoredExchanges());
+    };
+
+    window.addEventListener('storage', syncExchanges);
+    window.addEventListener('mrx_exchanges_updated', syncExchanges);
+    window.addEventListener('mrx_inventory_updated', syncExchanges);
+    return () => {
+      window.removeEventListener('storage', syncExchanges);
+      window.removeEventListener('mrx_exchanges_updated', syncExchanges);
+      window.removeEventListener('mrx_inventory_updated', syncExchanges);
+    };
+  }, []);
+
+  const toYMD = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const filteredExchanges = exchanges.filter(item => {
+    if (purchasedBy !== 'All' && item.newPurchasedBy !== purchasedBy && item.oldPurchasedBy !== purchasedBy) {
+      return false;
+    }
+    if (mobileBrand !== 'All' && item.newBrand !== mobileBrand && item.oldBrand !== mobileBrand) {
+      return false;
+    }
+    if (selectedDate) {
+      const itemYMD = toYMD(item.date);
+      const selYMD = toYMD(selectedDate);
+      if (itemYMD && selYMD && itemYMD !== selYMD) return false;
+    }
+    if (fromDate) {
+      const itemYMD = toYMD(item.date);
+      const fYMD = toYMD(fromDate);
+      if (itemYMD && fYMD && itemYMD < fYMD) return false;
+    }
+    if (toDate) {
+      const itemYMD = toYMD(item.date);
+      const tYMD = toYMD(toDate);
+      if (itemYMD && tYMD && itemYMD > tYMD) return false;
+    }
+    const q = (searchTerm || globalSearch || '').trim().toLowerCase();
+    if (q) {
+      const matchNew = `${item.newBrand} ${item.newModel} ${item.newPurchasedBy} ${item.newColor}`.toLowerCase().includes(q);
+      const matchOld = `${item.oldBrand} ${item.oldModel} ${item.oldPurchasedBy} ${item.oldColor}`.toLowerCase().includes(q);
+      if (!matchNew && !matchOld) return false;
+    }
+    return true;
+  }).sort((a, b) => {
+    const brandA = (a.newBrand || a.oldBrand || a.brand || '').trim().toLowerCase();
+    const brandB = (b.newBrand || b.oldBrand || b.brand || '').trim().toLowerCase();
+    if (brandA !== brandB) return brandA.localeCompare(brandB);
+    const modelA = (a.newModel || a.oldModel || a.model || '').trim().toLowerCase();
+    const modelB = (b.newModel || b.oldModel || b.model || '').trim().toLowerCase();
+    return modelA.localeCompare(modelB);
+  });
+
+  const totalBookingValue = filteredExchanges.reduce((sum, item) => sum + item.newAmount, 0);
+  const totalExchangeValue = filteredExchanges.reduce((sum, item) => sum + item.oldAmount, 0);
+  const netPayableBalance = totalBookingValue - totalExchangeValue;
+
+  const bookedByJeet = filteredExchanges.filter(item => (item.newPurchasedBy || '').toLowerCase().includes('jeet') || (item.oldPurchasedBy || '').toLowerCase().includes('jeet'));
+  const bookedBySonal = filteredExchanges.filter(item => (item.newPurchasedBy || '').toLowerCase().includes('sonal') || (item.oldPurchasedBy || '').toLowerCase().includes('sonal'));
+  const bookedByOthers = filteredExchanges.filter(item => !bookedByJeet.includes(item) && !bookedBySonal.includes(item));
+
+  const handleExchangeClick = (id) => {
+    const updated = exchanges.map(row => row.id === id ? { ...row, isExchanged: true, status: 'Exchanged' } : row);
+    setExchanges(updated);
+    try {
+      localStorage.setItem('mrx_exchanges', JSON.stringify(updated));
+      window.dispatchEvent(new Event('mrx_exchanges_updated'));
+    } catch (e) {}
+    alert('Exchange confirmed! Item marked as Exchange ✔️.');
+  };
+
+  const handleBookSubmit = (e) => {
+    e.preventDefault();
+    const oldAmt = Number(bookForm.oldAmount) || 0;
+    const newAmt = Number(bookForm.purchasedAmount) || 0;
+    const exVal = Number(bookForm.exchangeValue) || oldAmt;
+    const custName = bookForm.customerName || bookForm.newPayBy || 'Customer';
+
+    const newEntry = {
+      id: Date.now(),
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      newBrand: bookForm.newBrand,
+      newModel: bookForm.newModel,
+      newStorage: Number(bookForm.newStorage) || 256,
+      newRam: Number(bookForm.newRam) || 12,
+      newColor: bookForm.newColor || 'Standard',
+      newPurchasedBy: bookForm.newPayBy || custName,
+      newAmount: newAmt + exVal,
+      oldBrand: bookForm.oldBrand,
+      oldModel: bookForm.oldModel,
+      oldStorage: Number(bookForm.oldStorage) || 128,
+      oldRam: Number(bookForm.oldRam) || 8,
+      oldColor: 'Default',
+      oldPurchasedBy: bookForm.oldPayBy || 'Staff',
+      oldAmount: oldAmt,
+      oldImage: bookForm.oldImage || '',
+      status: 'Booked'
+    };
+
+    const updated = [newEntry, ...exchanges];
+    setExchanges(updated);
+
+    try {
+      localStorage.setItem('mrx_exchanges', JSON.stringify(updated));
+      window.dispatchEvent(new Event('mrx_exchanges_updated'));
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 1. Mark old in-hand device as Booked / Transferred from Old In-hand inventory
+    try {
+      const oldStock = JSON.parse(localStorage.getItem('mrx_old_in_hand_stock') || '[]');
+      const updatedOldStock = oldStock.map(dev => {
+        if (
+          (bookForm.oldBrand && dev.brand?.toLowerCase() === bookForm.oldBrand.toLowerCase()) &&
+          (bookForm.oldModel && dev.model?.toLowerCase() === bookForm.oldModel.toLowerCase())
+        ) {
+          return { ...dev, status: 'Booked' };
+        }
+        return dev;
+      });
+      localStorage.setItem('mrx_old_in_hand_stock', JSON.stringify(updatedOldStock));
+
+      const oldInv = JSON.parse(localStorage.getItem('mrx_old_inventory') || '[]');
+      const updatedOldInv = oldInv.map(dev => {
+        if (
+          (bookForm.oldBrand && dev.brand?.toLowerCase() === bookForm.oldBrand.toLowerCase()) &&
+          (bookForm.oldModel && dev.model?.toLowerCase() === bookForm.oldModel.toLowerCase())
+        ) {
+          return { ...dev, status: 'Booked' };
+        }
+        return dev;
+      });
+      localStorage.setItem('mrx_old_inventory', JSON.stringify(updatedOldInv));
+
+      window.dispatchEvent(new Event('mrx_inventory_updated'));
+    } catch (e) {
+      console.error(e);
+    }
+
+    setIsModalOpen(false);
+    alert(`Booking submitted successfully! Shifted to Booked & Exchange tab. Pending & Receiving Payment entry will be generated ONLY when Delivered.`);
+  };
+
+  const handleDeliverAction = (id) => {
+    const itemToDeliver = exchanges.find(item => item.id === id);
+    if (itemToDeliver) {
+      const newStockItem = {
+        sno: Date.now(),
+        id: itemToDeliver.id ? `EXCH-STOCK-${itemToDeliver.id}` : `STOCK-${Date.now()}`,
+        exchangeId: itemToDeliver.id,
+        date: new Date().toISOString().split('T')[0],
+        brand: itemToDeliver.newBrand,
+        model: itemToDeliver.newModel,
+        storage: itemToDeliver.newStorage,
+        ram: itemToDeliver.newRam,
+        color: itemToDeliver.newColor,
+        purchasedBy: itemToDeliver.newPurchasedBy,
+        amount: itemToDeliver.newAmount,
+        procedure: 'Sell'
+      };
+
+      const existingNewStock = JSON.parse(localStorage.getItem('mrx_new_in_hand_stock') || '[]');
+      localStorage.setItem('mrx_new_in_hand_stock', JSON.stringify([newStockItem, ...existingNewStock]));
+
+      // Create Pending Payment entry from Exchange Deliver ONLY
+      const totalAmt = Number(itemToDeliver.newAmount || 0);
+      const paidAmt = 0; // Paid Amount will be zero as requested for Book New Device for Exchange
+      const pendingAmt = totalAmt;
+
+      const pendingPaymentItem = {
+        id: `EXCH-PAY-${Date.now()}`,
+        exchangeId: itemToDeliver.id,
+        date: itemToDeliver.date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        customerName: itemToDeliver.newPurchasedBy || itemToDeliver.oldPurchasedBy || 'Account',
+        brand: itemToDeliver.newBrand,
+        model: itemToDeliver.newModel,
+        imei: `35${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
+        totalAmount: totalAmt,
+        paidAmount: 0,
+        pendingAmount: totalAmt,
+        status: 'Pending',
+        type: 'AGENT_PAYABLE',
+        recordCategory: 'BOOK_EXCHANGE',
+        mode: 'Exchange Trade-in',
+        remarks: `Delivered from Exchange`
+      };
+
+      const existingPending = JSON.parse(localStorage.getItem('mrx_pending_payments') || '[]');
+      localStorage.setItem('mrx_pending_payments', JSON.stringify([pendingPaymentItem, ...existingPending]));
+      window.dispatchEvent(new Event('mrx_pending_payments_updated'));
+      window.dispatchEvent(new Event('storage'));
+    }
+
+    // Update status to Delivered and clear old mobile details
+    const updated = exchanges.map(item => {
+      if (item.id === id) {
+        return {
+          ...item,
+          status: 'Delivered',
+          oldBrand: '-',
+          oldModel: '-',
+          oldStorage: '-',
+          oldRam: '-',
+          oldColor: '-',
+          oldPurchasedBy: '-',
+          oldAmount: 0,
+          oldImage: ''
+        };
+      }
+      return item;
+    });
+
+    setExchanges(updated);
+    try {
+      localStorage.setItem('mrx_exchanges', JSON.stringify(updated));
+      window.dispatchEvent(new Event('mrx_exchanges_updated'));
+    } catch (e) {}
+    setActiveMenuId(null);
+    alert(`Device "${itemToDeliver?.newBrand} ${itemToDeliver?.newModel}" marked as Delivered! Added to Pending & Receiving Payments and New In-Hand Stock.`);
+  };
+
+  const openSellModal = (row) => {
+    setSelectedSellRow(row);
+    setSellError('');
+    const fullModelName = `${row.newBrand} ${row.newModel}`;
+    const initialPrice = row.newAmount || 0;
+
+    setSellForm({
+      model: fullModelName,
+      unit: 1,
+      soldBy: row.newPurchasedBy || 'Jeet Khubchandani',
+      soldTo: row.newPurchasedBy || 'Customer',
+      paymentType: 'COMPLETE',
+      soldPrice: initialPrice,
+      totalAmount: initialPrice,
+      paidAmount: initialPrice,
+      date: new Date().toISOString().split('T')[0]
+    });
+    setIsSellModalOpen(true);
+  };
+
+  const handleSellSubmit = (e) => {
+    e.preventDefault();
+    setSellError('');
+
+    if (!selectedSellRow) return;
+
+    const requestedUnits = Number(sellForm.unit) || 1;
+
+    // Record sale in mrx_sales
+    const newSale = {
+      id: `SALE-${Date.now()}`,
+      date: sellForm.date,
+      brand: selectedSellRow.newBrand,
+      model: selectedSellRow.newModel,
+      customerName: sellForm.soldTo,
+      soldBy: sellForm.soldBy,
+      quantity: requestedUnits,
+      unitPrice: Number(sellForm.soldPrice) || 0,
+      totalAmount: Number(sellForm.totalAmount) || 0,
+      paidAmount: Number(sellForm.paidAmount) || 0,
+      purchase_amount: Number(selectedSellRow.purchasedAmount || selectedSellRow.amount || selectedSellRow.purchase_amount || 0),
+      purchase: Number(selectedSellRow.purchasedAmount || selectedSellRow.amount || selectedSellRow.purchase_amount || 0),
+      paymentMode: sellForm.paymentType || 'Cash',
+      status: 'Sold'
+    };
+
+    const existingSales = JSON.parse(localStorage.getItem('mrx_sales') || '[]');
+    localStorage.setItem('mrx_sales', JSON.stringify([newSale, ...existingSales]));
+
+    // Mark row as Sold in exchanges
+    const updated = exchanges.map(item => {
+      if (item.id === selectedSellRow.id) {
+        return {
+          ...item,
+          status: 'Sold'
+        };
+      }
+      return item;
+    });
+
+    setExchanges(updated);
+    try {
+      localStorage.setItem('mrx_exchanges', JSON.stringify(updated));
+      window.dispatchEvent(new Event('mrx_exchanges_updated'));
+      window.dispatchEvent(new Event('mrx_sales_updated'));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    setIsSellModalOpen(false);
+    alert(`Successfully sold "${selectedSellRow.newBrand} ${selectedSellRow.newModel}"! Status updated to Sold ✔️.`);
+  };
+
+  const handleCancelAction = (id) => {
+    const itemToCancel = exchanges.find(item => item.id === id);
+    if (itemToCancel) {
+      const oldStockItem = {
+        id: `MRX-${Date.now().toString().slice(-5)}`,
+        device_code: `MRX-${Date.now().toString().slice(-5)}`,
+        brand: itemToCancel.oldBrand,
+        model: itemToCancel.oldModel,
+        storage: Number(itemToCancel.oldStorage) || 128,
+        ram: Number(itemToCancel.oldRam) || 6,
+        colour: itemToCancel.oldColor || 'Default',
+        purchase_amount: Number(itemToCancel.oldAmount) || 0,
+        paid_by: itemToCancel.oldPurchasedBy || 'Staff',
+        intake_date: new Date().toISOString().split('T')[0],
+        status: 'OLD_IN_HAND',
+        image_url: itemToCancel.oldImage || 'https://images.unsplash.com/photo-1591337676887-a217a6970a8a?w=100'
+      };
+
+      const existingOldStock = JSON.parse(localStorage.getItem('mrx_old_in_hand_stock') || '[]');
+      localStorage.setItem('mrx_old_in_hand_stock', JSON.stringify([oldStockItem, ...existingOldStock]));
+
+      const existingInventory = JSON.parse(localStorage.getItem('mrx_old_inventory') || '[]');
+      localStorage.setItem('mrx_old_inventory', JSON.stringify([oldStockItem, ...existingInventory]));
+      
+      window.dispatchEvent(new Event('mrx_inventory_updated'));
+    }
+
+    // Clean up any Pending & Receiving payments if this exchange was cancelled
+    try {
+      const existingPending = JSON.parse(localStorage.getItem('mrx_pending_payments') || '[]');
+      const cleanedPending = existingPending.filter(p => p.exchangeId !== id && p.id !== `EXCH-BOOK-${id}`);
+      localStorage.setItem('mrx_pending_payments', JSON.stringify(cleanedPending));
+      window.dispatchEvent(new Event('mrx_pending_payments_updated'));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    const updated = exchanges.filter(item => item.id !== id);
+    setExchanges(updated);
+    try {
+      localStorage.setItem('mrx_exchanges', JSON.stringify(updated));
+      window.dispatchEvent(new Event('mrx_exchanges_updated'));
+    } catch (e) {}
+    setActiveMenuId(null);
+    alert(`Exchange Cancelled! Old trade-in device "${itemToCancel?.oldBrand} ${itemToCancel?.oldModel}" returned to Old In-Hand Stock. Pending payment entry stopped/removed.`);
+    navigate('/old-in-hand');
+  };
+
+  const handleExportPdf = () => {
+    let headers = [];
+    let rows = [];
+    let title = 'Exchange Report';
+
+    if (activeTab === 'bookings') {
+      title = 'New Phone Bookings Report';
+      headers = ['#', 'Date', 'Customer Name', 'New Phone Model', 'Specs', 'Color', 'Booking Amount (Rs)', 'Status'];
+      rows = filteredExchanges.map((item, idx) => [
+        idx + 1,
+        item.date,
+        item.newPurchasedBy || 'Customer',
+        `${item.newBrand} ${item.newModel}`,
+        `${item.newStorage}GB / ${item.newRam}GB`,
+        item.newColor,
+        `Rs. ${item.newAmount.toLocaleString()}`,
+        item.status || 'Booked'
+      ]);
+    } else if (activeTab === 'exchanges') {
+      title = 'Old Phone Exchanges Report';
+      headers = ['#', 'Date', 'Staff / Evaluator', 'Exchanged Old Device', 'Specs', 'Color', 'Trade-in Valuation (Rs)', 'Trade Status'];
+      rows = filteredExchanges.map((item, idx) => [
+        idx + 1,
+        item.date,
+        item.oldPurchasedBy || 'Staff',
+        `${item.oldBrand} ${item.oldModel}`,
+        `${item.oldStorage}GB / ${item.oldRam}GB`,
+        item.oldColor,
+        `Rs. ${item.oldAmount.toLocaleString()}`,
+        'Received for Trade-in'
+      ]);
+    } else {
+      headers = ['#', 'Date', 'New Phone Model', 'New Price (Rs)', 'Exchanged Old Model', 'Exchange Val (Rs)', 'Customer / Purchased By', 'Status'];
+      rows = filteredExchanges.map((item, idx) => [
+        idx + 1,
+        item.date,
+        `${item.newBrand} ${item.newModel}`,
+        `Rs. ${item.newAmount.toLocaleString()}`,
+        `${item.oldBrand} ${item.oldModel}`,
+        `Rs. ${item.oldAmount.toLocaleString()}`,
+        item.newPurchasedBy || '-',
+        item.status || 'Booked'
+      ]);
+    }
+
+    setExportModalConfig({
+      isOpen: true,
+      title,
+      headers,
+      rows,
+      filename: `Booked_Exchange_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
+      summaryInfo: [
+        { label: 'Total Booking Value', value: `Rs. ${totalBookingValue.toLocaleString()}`, color: '#0284c7' },
+        { label: 'Total Exchange Value', value: `Rs. ${totalExchangeValue.toLocaleString()}`, color: '#16a34a' },
+        { label: 'Net Trade Balance', value: `Rs. ${netPayableBalance.toLocaleString()}`, color: '#7c3aed' }
+      ]
+    });
+  };
+
+  return (
+    <div>
+      {/* Header & Breadcrumbs */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#0f172a' }}>Booked</h1>
+          <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px' }}>Manage booked mobile pre-orders, old phone trade-in valuations, and exchange reconciliations.</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#64748b' }}>
+            <Home size={14} /> / <span style={{ color: '#0284c7', fontWeight: 600 }}>Booked</span>
+          </div>
+          <button onClick={handleExportPdf} className="btn-secondary" style={{ padding: '9px 16px', borderRadius: '8px' }}>
+            <FileText size={16} /> Export PDF
+          </button>
+          <button onClick={() => setIsModalOpen(true)} className="btn-primary" style={{ padding: '10px 20px', borderRadius: '8px' }}>
+            <Plus size={16} /> Book New Device
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards Summary Section */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', borderLeft: '4px solid #0284c7' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Booking Value</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#0284c7', marginTop: '6px' }}>
+            <CurrencyAmount amount={totalBookingValue} />
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{filteredExchanges.length} New Phone Bookings</div>
+        </div>
+
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', borderLeft: '4px solid #16a34a' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Exchange Valuation</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#16a34a', marginTop: '6px' }}>
+            <CurrencyAmount amount={totalExchangeValue} />
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{filteredExchanges.length} Trade-in Old Devices</div>
+        </div>
+
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', borderLeft: '4px solid #7c3aed' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net Collectible Balance</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#7c3aed', marginTop: '6px' }}>
+            <CurrencyAmount amount={netPayableBalance} />
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Customer net balance due</div>
+        </div>
+
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', borderLeft: '4px solid #2563eb' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Booked by Jeet Khubchandani</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#2563eb', marginTop: '6px' }}>
+            {bookedByJeet.length} Bookings
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+            <CurrencyAmount amount={bookedByJeet.reduce((s, i) => s + i.newAmount, 0)} /> total
+          </div>
+        </div>
+
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', borderLeft: '4px solid #d946ef' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Booked by Sonal Wadwani</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#d946ef', marginTop: '6px' }}>
+            {bookedBySonal.length} Bookings
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+            <CurrencyAmount amount={bookedBySonal.reduce((s, i) => s + i.newAmount, 0)} /> total
+          </div>
+        </div>
+
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', borderLeft: '4px solid #ea580c' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Booked by Others</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#ea580c', marginTop: '6px' }}>
+            {bookedByOthers.length} Bookings
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+            <CurrencyAmount amount={bookedByOthers.reduce((s, i) => s + i.newAmount, 0)} /> total
+          </div>
+        </div>
+      </div>
+
+      {/* Tabulation Bar & Search */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+          <button
+            onClick={() => setActiveTab('all')}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: activeTab === 'all' ? '#ffffff' : 'transparent',
+              color: activeTab === 'all' ? '#0284c7' : '#64748b',
+              boxShadow: activeTab === 'all' ? '0 2px 4px rgba(0,0,0,0.06)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            All Overview ({filteredExchanges.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('bookings')}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: activeTab === 'bookings' ? '#ffffff' : 'transparent',
+              color: activeTab === 'bookings' ? '#0284c7' : '#64748b',
+              boxShadow: activeTab === 'bookings' ? '0 2px 4px rgba(0,0,0,0.06)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            📱 Booked ({filteredExchanges.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('exchanges')}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: activeTab === 'exchanges' ? '#ffffff' : 'transparent',
+              color: activeTab === 'exchanges' ? '#0284c7' : '#64748b',
+              boxShadow: activeTab === 'exchanges' ? '0 2px 4px rgba(0,0,0,0.06)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            🔄 Exchange ({filteredExchanges.length})
+          </button>
+        </div>
+
+        {/* Quick Search */}
+        <div style={{ position: 'relative', minWidth: '260px' }}>
+          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Search brand, model, customer..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ paddingLeft: '36px', height: '38px', borderRadius: '8px', fontSize: '13px' }}
+          />
+        </div>
+      </div>
+
+      {/* Top Filter Bar */}
+      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <div>
+          <label style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', display: 'block', marginBottom: '4px' }}>From Date</label>
+          <input type="date" className="form-control" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={{ width: '160px', padding: '7px 12px' }} />
+        </div>
+        <div>
+          <label style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', display: 'block', marginBottom: '4px' }}>To Date</label>
+          <input type="date" className="form-control" value={toDate} onChange={(e) => setToDate(e.target.value)} style={{ width: '160px', padding: '7px 12px' }} />
+        </div>
+        <div>
+          <label style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', display: 'block', marginBottom: '4px' }}>Purchased By / Customer</label>
+          <select className="form-control" value={purchasedBy} onChange={(e) => setPurchasedBy(e.target.value)} style={{ width: '150px', padding: '7px 12px' }}>
+            <option>All</option>
+            <option>Jeet Khubchandani</option>
+            <option>Sonal Wadwani</option>
+            <option>Rohit</option>
+            <option>Neha</option>
+            <option>Aman</option>
+            <option>Karan</option>
+            <option>Vikram</option>
+            <option>Ananya</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', display: 'block', marginBottom: '4px' }}>Mobile Brand</label>
+          <select className="form-control" value={mobileBrand} onChange={(e) => setMobileBrand(e.target.value)} style={{ width: '150px', padding: '7px 12px' }}>
+            <option>All</option>
+            <option>Apple</option>
+            <option>Samsung</option>
+            <option>Google Pixel</option>
+            <option>OnePlus</option>
+            <option>Vivo</option>
+            <option>Oppo</option>
+            <option>Xiaomi</option>
+            <option>Nothing</option>
+            <option>Motorola</option>
+          </select>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', marginTop: '18px' }}>
+          <button onClick={() => { setFromDate(''); setToDate(''); setPurchasedBy('All'); setMobileBrand('All'); setSearchTerm(''); }} className="btn-secondary">Clear Filters</button>
+        </div>
+      </div>
+
+      {/* TAB CONTENT: 1. ALL OVERVIEW TAB (Dual Grouped Header Table) */}
+      {activeTab === 'all' && (
+        <div className="table-responsive">
+          <table className="custom-table" style={{ borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th rowSpan="2" style={{ width: '40px' }}>#</th>
+                <th rowSpan="2">Date</th>
+                <th colSpan="7" style={{ textAlign: 'center', backgroundColor: '#e0f2fe', color: '#0369a1', fontWeight: 800 }}>New Mobile</th>
+                <th colSpan="7" style={{ textAlign: 'center', backgroundColor: '#f1f5f9', color: '#334155', fontWeight: 800 }}>Old Mobile</th>
+                <th rowSpan="2">Action</th>
+              </tr>
+              <tr>
+                {/* New Mobile Subheaders */}
+                <th style={{ backgroundColor: '#e0f2fe' }}>Brand Name</th>
+                <th style={{ backgroundColor: '#e0f2fe' }}>Model</th>
+                <th style={{ backgroundColor: '#e0f2fe' }}>Storage (GB)</th>
+                <th style={{ backgroundColor: '#e0f2fe' }}>RAM (GB)</th>
+                <th style={{ backgroundColor: '#e0f2fe' }}>Color</th>
+                <th style={{ backgroundColor: '#e0f2fe' }}>Purchased By</th>
+                <th style={{ backgroundColor: '#e0f2fe' }}>Purchased Amount</th>
+
+                {/* Old Mobile Subheaders */}
+                <th style={{ backgroundColor: '#f1f5f9' }}>Brand Name</th>
+                <th style={{ backgroundColor: '#f1f5f9' }}>Model</th>
+                <th style={{ backgroundColor: '#f1f5f9' }}>Storage (GB)</th>
+                <th style={{ backgroundColor: '#f1f5f9' }}>RAM (GB)</th>
+                <th style={{ backgroundColor: '#f1f5f9' }}>Color</th>
+                <th style={{ backgroundColor: '#f1f5f9' }}>Purchased By</th>
+                <th style={{ backgroundColor: '#f1f5f9' }}>Exchange Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredExchanges.length === 0 ? (
+                <tr>
+                  <td colSpan="17" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
+                    No booked or exchange items match the selected filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredExchanges.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td data-label="#">{idx + 1}</td>
+                    <td data-label="Date">{row.date}</td>
+
+                    {/* New Mobile Cells */}
+                    <td data-label="New Brand" style={{ fontWeight: 600 }}>{row.newBrand}</td>
+                    <td data-label="New Model" style={{ fontWeight: 700 }}>{row.newModel}</td>
+                    <td data-label="New Storage">{row.newStorage} GB</td>
+                    <td data-label="New RAM">{row.newRam} GB</td>
+                    <td data-label="New Color">{row.newColor}</td>
+                    <td data-label="New Purchased By">{row.newPurchasedBy}</td>
+                    <td data-label="New Amount" style={{ fontWeight: 700 }}>
+                      <CurrencyAmount amount={row.newAmount} />
+                      <span style={{ fontSize: '11px', color: '#0284c7', marginLeft: '4px' }}>🔄</span>
+                    </td>
+
+                    {/* Old Mobile Cells */}
+                    <td data-label="Old Brand" style={{ fontWeight: 600, color: '#475569' }}>{row.oldBrand}</td>
+                    <td data-label="Old Model" style={{ fontWeight: 700, color: '#475569' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {row.oldImage && row.oldImage !== '-' && (
+                          <img 
+                            src={row.oldImage} 
+                            alt={row.oldModel} 
+                            onClick={() => setExpandedImage(row.oldImage)} 
+                            title="Click to zoom image" 
+                            style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'cover', cursor: 'zoom-in', border: '1px solid #cbd5e1' }}
+                          />
+                        )}
+                        <span>{row.oldModel}</span>
+                      </div>
+                    </td>
+                    <td data-label="Old Storage">{row.oldStorage} GB</td>
+                    <td data-label="Old RAM">{row.oldRam} GB</td>
+                    <td data-label="Old Color">{row.oldColor}</td>
+                    <td data-label="Old Purchased By">{row.oldPurchasedBy}</td>
+                    <td data-label="Exchange Value" style={{ fontWeight: 700, color: '#16a34a' }}>
+                      <CurrencyAmount amount={row.exchangeValue !== undefined && row.exchangeValue !== null && row.exchangeValue !== '' ? row.exchangeValue : (row.oldExchangeValue || row.oldAmount || 0)} />
+                      <span style={{ fontSize: '11px', color: '#0284c7', marginLeft: '4px' }}>🔄</span>
+                    </td>
+
+                    <td data-label="Action">
+                      {row.status === 'Sold' ? (
+                        <span style={{ background: '#dcfce7', color: '#15803d', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={14} /> Sold ✔️
+                        </span>
+                      ) : row.status === 'Delivered' ? (
+                        <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={14} /> Delivered (In New Stock)
+                        </span>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <button 
+                            onClick={() => handleDeliverAction(row.id)}
+                            style={{ background: '#059669', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            title="Deliver new phone -> Remove old phone details & enable Sell button"
+                          >
+                            <CheckCircle size={14} /> Deliver
+                          </button>
+                          <button 
+                            onClick={() => handleCancelAction(row.id)}
+                            style={{ background: '#ef4444', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            title="Cancel exchange -> Move old device to Old In-hand Inventory"
+                          >
+                            <XCircle size={14} /> Cancel
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* TAB CONTENT: 2. NEW PHONE BOOKINGS TAB */}
+      {activeTab === 'bookings' && (
+        <div className="table-responsive">
+          <table className="custom-table">
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                <th style={{ width: '40px' }}>#</th>
+                <th>Booking Date</th>
+                <th>Purchased By / Customer</th>
+                <th>New Phone Brand</th>
+                <th>Model</th>
+                <th>Storage</th>
+                <th>RAM</th>
+                <th>Color</th>
+                <th>Booking Amount</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredExchanges.length === 0 ? (
+                <tr>
+                  <td colSpan="11" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
+                    No new phone bookings match your search.
+                  </td>
+                </tr>
+              ) : (
+                filteredExchanges.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td data-label="#">{idx + 1}</td>
+                    <td data-label="Date">{row.date}</td>
+                    <td data-label="Customer" style={{ fontWeight: 700, color: '#0369a1' }}>{row.newPurchasedBy}</td>
+                    <td data-label="Brand" style={{ fontWeight: 600 }}>{row.newBrand}</td>
+                    <td data-label="Model" style={{ fontWeight: 700 }}>{row.newModel}</td>
+                    <td data-label="Storage">{row.newStorage} GB</td>
+                    <td data-label="RAM">{row.newRam} GB</td>
+                    <td data-label="Color">{row.newColor}</td>
+                    <td data-label="Booking Amount" style={{ fontWeight: 800, color: '#0284c7' }}>
+                      <CurrencyAmount amount={row.newAmount} />
+                    </td>
+                    <td data-label="Status">
+                      <span style={{ background: row.status === 'Sold' ? '#dcfce7' : row.status === 'Delivered' ? '#dbeafe' : '#e0f2fe', color: row.status === 'Sold' ? '#15803d' : row.status === 'Delivered' ? '#1e40af' : '#0369a1', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700 }}>
+                        {row.status || 'Booked'}
+                      </span>
+                    </td>
+                    <td data-label="Action" style={{ position: 'relative' }}>
+                      {row.status === 'Sold' ? (
+                        <span style={{ background: '#dcfce7', color: '#15803d', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={14} /> Sold ✔️
+                        </span>
+                      ) : row.status === 'Delivered' ? (
+                        <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={14} /> Delivered (In New Stock)
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setActiveMenuId(activeMenuId === row.id ? null : row.id)}
+                            className="btn-secondary"
+                            style={{ padding: '6px' }}
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+
+                          {activeMenuId === row.id && (
+                            <div style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: '100%',
+                              zIndex: 50,
+                              background: '#ffffff',
+                              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)',
+                              borderRadius: '8px',
+                              padding: '6px',
+                              minWidth: '180px',
+                              border: '1px solid #e2e8f0'
+                            }}>
+                              <button
+                                onClick={() => handleDeliverAction(row.id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#059669', fontSize: '12px', fontWeight: 700, cursor: 'pointer', borderRadius: '4px' }}
+                              >
+                                <CheckCircle size={14} /> Delivered (New In-hand)
+                              </button>
+                              <button
+                                onClick={() => handleCancelAction(row.id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: 700, cursor: 'pointer', borderRadius: '4px' }}
+                              >
+                                <XCircle size={14} /> Cancel (Old In-hand)
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* TAB CONTENT: 3. OLD PHONE EXCHANGES TAB */}
+      {activeTab === 'exchanges' && (
+        <div className="table-responsive">
+          <table className="custom-table">
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                <th style={{ width: '40px' }}>#</th>
+                <th>Intake Date</th>
+                <th>Staff / Evaluator</th>
+                <th>Old Phone Brand</th>
+                <th>Model</th>
+                <th>Storage</th>
+                <th>RAM</th>
+                <th>Color</th>
+                <th>Trade Valuation (Rs)</th>
+                <th>Trade Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredExchanges.length === 0 ? (
+                <tr>
+                  <td colSpan="11" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
+                    No old phone exchanges match your search.
+                  </td>
+                </tr>
+              ) : (
+                filteredExchanges.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td data-label="#">{idx + 1}</td>
+                    <td data-label="Intake Date">{row.date}</td>
+                    <td data-label="Staff" style={{ fontWeight: 700, color: '#475569' }}>{row.oldPurchasedBy}</td>
+                    <td data-label="Brand" style={{ fontWeight: 600 }}>{row.oldBrand}</td>
+                    <td data-label="Model" style={{ fontWeight: 700 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {row.oldImage && row.oldImage !== '-' && (
+                          <img 
+                            src={row.oldImage} 
+                            alt={row.oldModel} 
+                            onClick={() => setExpandedImage(row.oldImage)} 
+                            title="Click to zoom image" 
+                            style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'cover', cursor: 'zoom-in', border: '1px solid #cbd5e1' }}
+                          />
+                        )}
+                        <span>{row.oldModel}</span>
+                      </div>
+                    </td>
+                    <td data-label="Storage">{row.oldStorage} GB</td>
+                    <td data-label="RAM">{row.oldRam} GB</td>
+                    <td data-label="Color">{row.oldColor}</td>
+                    <td data-label="Trade Valuation" style={{ fontWeight: 800, color: '#16a34a' }}>
+                      <CurrencyAmount amount={row.oldAmount} />
+                    </td>
+                    <td data-label="Trade Status">
+                      <span style={{ background: row.status === 'Sold' ? '#dcfce7' : row.status === 'Delivered' ? '#dbeafe' : '#dcfce7', color: row.status === 'Sold' ? '#15803d' : row.status === 'Delivered' ? '#1e40af' : '#15803d', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700 }}>
+                        {row.status === 'Delivered' ? 'Delivered' : row.status === 'Sold' ? 'Sold' : 'Trade-in Received'}
+                      </span>
+                    </td>
+                    <td data-label="Action" style={{ position: 'relative' }}>
+                      {row.status === 'Sold' ? (
+                        <span style={{ background: '#dcfce7', color: '#15803d', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={14} /> Sold ✔️
+                        </span>
+                      ) : row.status === 'Delivered' ? (
+                        <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={14} /> Delivered (In New Stock)
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setActiveMenuId(activeMenuId === row.id ? null : row.id)}
+                            className="btn-secondary"
+                            style={{ padding: '6px' }}
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+
+                          {activeMenuId === row.id && (
+                            <div style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: '100%',
+                              zIndex: 50,
+                              background: '#ffffff',
+                              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)',
+                              borderRadius: '8px',
+                              padding: '6px',
+                              minWidth: '180px',
+                              border: '1px solid #e2e8f0'
+                            }}>
+                              <button
+                                onClick={() => handleDeliverAction(row.id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#059669', fontSize: '12px', fontWeight: 700, cursor: 'pointer', borderRadius: '4px' }}
+                              >
+                                <CheckCircle size={14} /> Delivered (New In-hand)
+                              </button>
+                              <button
+                                onClick={() => handleCancelAction(row.id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: 700, cursor: 'pointer', borderRadius: '4px' }}
+                              >
+                                <XCircle size={14} /> Cancel (Old In-hand)
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Book a Mobile Modal matching diagram */}
+      {isModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', borderRadius: '16px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', position: 'sticky', top: 0, background: '#fff', zIndex: 10, paddingBottom: '10px', borderBottom: '1px solid #e2e8f0' }}>
+              <div>
+                <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#0284c7' }}>Book & Exchange Phone</h2>
+                <p style={{ fontSize: '13px', color: '#64748b' }}>Enter old phone trade-in valuation and new phone pre-order booking details.</p>
+              </div>
+              <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} color="#64748b" /></button>
+            </div>
+
+            <form onSubmit={handleBookSubmit}>
+              {/* SECTION 1: Exchange Old Phone */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#334155', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  🔄 Exchange Old Phone
+                </div>
+
+                {/* Data of Old inhand picker */}
+                <div style={{ marginBottom: '16px', background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px dashed #0284c7' }}>
+                  <label className="form-label" style={{ color: '#0284c7', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                    📦 Pick Mobile from Old In-hand Stock (Auto-fill & Fetch Image)
+                  </label>
+                  <select 
+                    className="form-control" 
+                    onChange={(e) => handleSelectOldInHandDevice(e.target.value)}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>-- Select a device from Old In-hand Inventory --</option>
+                    {oldInHandDevices.map((dev, idx) => (
+                      <option key={dev.id || idx} value={dev.id || idx}>
+                        {dev.brand} {dev.model} ({dev.storage}GB / {dev.ram}GB) - ₹{Number(dev.amount).toLocaleString()} (By: {dev.paid_by})
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Display Fetched Image Preview & Camera Photo Option */}
+                  <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: '#f0fdf4', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      {bookForm.oldImage ? (
+                        <img 
+                          src={bookForm.oldImage} 
+                          alt="Fetched Device" 
+                          onClick={() => setExpandedImage(bookForm.oldImage)}
+                          title="Click to view full image"
+                          style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #cbd5e1', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', cursor: 'pointer' }} 
+                        />
+                      ) : (
+                        <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                          <Camera size={24} />
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#15803d' }}>📷 Device Photo (Clickable)</div>
+                        <div style={{ fontSize: '11px', color: '#166534', marginTop: '2px' }}>{bookForm.oldImage ? 'Click photo to zoom view' : 'No image captured yet'}</div>
+                      </div>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsCameraOpen(true)} 
+                      className="btn-secondary" 
+                      style={{ padding: '6px 12px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '6px', fontWeight: 700 }}
+                    >
+                      <Camera size={14} /> {bookForm.oldImage ? 'Change Photo' : 'Photo Option'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label className="form-label">Old Phone Brand *</label>
+                    <select className="form-control" value={bookForm.oldBrand} onChange={(e) => setBookForm({ ...bookForm, oldBrand: e.target.value })}>
+                      <option value="Samsung">Samsung</option>
+                      <option value="Apple">Apple</option>
+                      <option value="Google Pixel">Google Pixel</option>
+                      <option value="OnePlus">OnePlus</option>
+                      <option value="Xiaomi">Xiaomi</option>
+                      <option value="Vivo">Vivo</option>
+                      <option value="Oppo">Oppo</option>
+                      <option value="Realme">Realme</option>
+                      <option value="Nothing">Nothing</option>
+                      <option value="Motorola">Motorola</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Old Phone Model *</label>
+                    <input type="text" className="form-control" placeholder="e.g. S22 Ultra / iPhone 13" value={bookForm.oldModel} onChange={(e) => setBookForm({ ...bookForm, oldModel: e.target.value })} required />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Storage (GB) *</label>
+                    <select className="form-control" value={bookForm.oldStorage} onChange={(e) => setBookForm({ ...bookForm, oldStorage: e.target.value })}>
+                      <option value="64">64 GB</option>
+                      <option value="128">128 GB</option>
+                      <option value="256">256 GB</option>
+                      <option value="512">512 GB</option>
+                      <option value="1024">1 TB</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">RAM (GB) *</label>
+                    <select className="form-control" value={bookForm.oldRam} onChange={(e) => setBookForm({ ...bookForm, oldRam: e.target.value })}>
+                      <option value="4">4 GB</option>
+                      <option value="6">6 GB</option>
+                      <option value="8">8 GB</option>
+                      <option value="12">12 GB</option>
+                      <option value="16">16 GB</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="form-label">Pay By *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Enter evaluator / staff name" 
+                      value={bookForm.oldPayBy} 
+                      onChange={(e) => setBookForm({ ...bookForm, oldPayBy: e.target.value })} 
+                      required 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Booking New Phone */}
+              <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: '12px', border: '1px solid #bae6fd', marginBottom: '20px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#0369a1', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  📱 Booking New Phone Details
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  {/* Customer Name placed BEFORE Exchange Value */}
+                  <div>
+                    <label className="form-label">Customer Name *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Enter customer name" 
+                      value={bookForm.customerName || ''} 
+                      onChange={(e) => setBookForm({ ...bookForm, customerName: e.target.value })} 
+                      required 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Exchange Value (₹) *</label>
+                    <input type="number" className="form-control" placeholder="₹ Trade valuation" value={bookForm.exchangeValue} onChange={(e) => setBookForm({ ...bookForm, exchangeValue: e.target.value })} required />
+                  </div>
+
+                  <div>
+                    <label className="form-label">New Phone Brand *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Enter brand name / remarks (e.g. Apple, Samsung)" 
+                      value={bookForm.newBrand} 
+                      onChange={(e) => setBookForm({ ...bookForm, newBrand: e.target.value })} 
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">New Phone Model *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Enter model name / remarks (e.g. iPhone 15 Pro)" 
+                      value={bookForm.newModel} 
+                      onChange={(e) => setBookForm({ ...bookForm, newModel: e.target.value })} 
+                      required 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Storage *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Enter storage / remarks (e.g. 128 GB)" 
+                      value={bookForm.newStorage} 
+                      onChange={(e) => setBookForm({ ...bookForm, newStorage: e.target.value })} 
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">RAM *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Enter RAM / remarks (e.g. 8 GB)" 
+                      value={bookForm.newRam} 
+                      onChange={(e) => setBookForm({ ...bookForm, newRam: e.target.value })} 
+                      required 
+                    />
+                  </div>
+
+                  {/* Pay By field is separate */}
+                  <div>
+                    <label className="form-label">Pay By (Payer / Account) *</label>
+                    <input type="text" className="form-control" placeholder="Enter payer / account (e.g. Jeet, Sonal, Staff)" value={bookForm.newPayBy} onChange={(e) => setBookForm({ ...bookForm, newPayBy: e.target.value })} required />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Platform *</label>
+                    <select className="form-control" value={bookForm.platform} onChange={(e) => setBookForm({ ...bookForm, platform: e.target.value })}>
+                      <option value="Offline / Store">Offline / Store</option>
+                      <option value="Website">Website</option>
+                      <option value="Amazon">Amazon</option>
+                      <option value="Flipkart">Flipkart</option>
+                      <option value="Others">Others</option>
+                    </select>
+                    <div style={{ marginTop: '8px' }}>
+                      <label className="form-label" style={{ fontSize: '11px', color: '#64748b' }}>Platform / Order Remarks</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="Enter platform remarks / order ID details" 
+                        value={bookForm.platformRemarks} 
+                        onChange={(e) => setBookForm({ ...bookForm, platformRemarks: e.target.value })} 
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="form-label">Purchased Amount (Paid ₹) *</label>
+                    <input type="number" className="form-control" placeholder="₹ Amount paid" value={bookForm.purchasedAmount} onChange={(e) => setBookForm({ ...bookForm, purchasedAmount: e.target.value })} required />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Via (Cash/Card/UPI) *</label>
+                    <select className="form-control" value={bookForm.via} onChange={(e) => setBookForm({ ...bookForm, via: e.target.value })}>
+                      <option value="Cash">Cash</option>
+                      <option value="UPI">UPI</option>
+                      <option value="Card">Card</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Account ID / UTR</label>
+                    <input type="text" className="form-control" placeholder="Enter account ID / Transaction ref" value={bookForm.accountId} onChange={(e) => setBookForm({ ...bookForm, accountId: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary">Cancel</button>
+                <button type="submit" className="btn-primary" style={{ padding: '10px 24px' }}>Submit Booking</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sell Mobile Modal (Identical to New In-Hand Sell Modal with all features) */}
+      {isSellModalOpen && selectedSellRow && (
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ maxWidth: '480px', borderRadius: '16px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <div>
+                <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#059669', margin: 0 }}>Sell Mobile</h2>
+                <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', margin: 0 }}>Complete sales transaction for delivered exchange device.</p>
+              </div>
+              <button onClick={() => setIsSellModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} color="#64748b" /></button>
+            </div>
+
+            {sellError && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#991b1b', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertTriangle size={16} />
+                <span>{sellError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSellSubmit}>
+              {/* Device Model */}
+              <div style={{ marginBottom: '14px' }}>
+                <label className="form-label" style={{ fontWeight: 700, color: '#0284c7' }}>Device Model *</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={sellForm.model} 
+                  onChange={(e) => setSellForm({ ...sellForm, model: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                {/* Sold by */}
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700 }}>Sold by *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    value={sellForm.soldBy} 
+                    onChange={(e) => setSellForm({ ...sellForm, soldBy: e.target.value })} 
+                    required 
+                  />
+                </div>
+
+                {/* Unit */}
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700, color: '#dc2626' }}>
+                    Sell Quantity *
+                  </label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    value={sellForm.unit} 
+                    onChange={(e) => {
+                      const u = parseInt(e.target.value) || 0;
+                      const sp = Number(sellForm.soldPrice) || 0;
+                      setSellForm({ ...sellForm, unit: u, totalAmount: u * sp });
+                    }} 
+                    min="1"
+                    required 
+                  />
+                </div>
+              </div>
+
+              {/* Customer Name */}
+              <div style={{ marginBottom: '14px' }}>
+                <label className="form-label" style={{ fontWeight: 700 }}>Customer Name *</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="Enter customer or party name" 
+                  value={sellForm.soldTo} 
+                  onChange={(e) => setSellForm({ ...sellForm, soldTo: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                {/* Price Per Unit */}
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700 }}>Price Per Unit (₹) *</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    value={sellForm.soldPrice} 
+                    onChange={(e) => {
+                      const sp = e.target.value;
+                      const u = Number(sellForm.unit) || 1;
+                      setSellForm({ ...sellForm, soldPrice: sp, totalAmount: Number(sp) * u });
+                    }} 
+                    required 
+                  />
+                </div>
+
+                {/* Total Selling Price */}
+                <div>
+                  <label className="form-label" style={{ fontWeight: 700, color: '#059669' }}>Total Selling Price (₹) *</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    value={sellForm.totalAmount} 
+                    onChange={(e) => setSellForm({ ...sellForm, totalAmount: e.target.value })} 
+                    required 
+                  />
+                </div>
+              </div>
+
+              {/* Paid Amount */}
+              <div style={{ marginBottom: '18px' }}>
+                <label className="form-label" style={{ fontWeight: 700 }}>Paid Amount (₹) *</label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  placeholder="₹ Amount paid so far" 
+                  value={sellForm.paidAmount} 
+                  onChange={(e) => setSellForm({ ...sellForm, paidAmount: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button type="button" onClick={() => setIsSellModalOpen(false)} className="btn-secondary">Cancel</button>
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  style={{ 
+                    padding: '10px 24px', 
+                    fontWeight: 800,
+                    background: '#059669'
+                  }}
+                >
+                  Confirm Sale ({sellForm.unit} Unit)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PDF Export Preview Dialogue Modal */}
+      <PdfExportModal
+        isOpen={exportModalConfig.isOpen}
+        onClose={() => setExportModalConfig({ ...exportModalConfig, isOpen: false })}
+        title={exportModalConfig.title}
+        headers={exportModalConfig.headers}
+        rows={exportModalConfig.rows}
+        filename={exportModalConfig.filename}
+        summaryInfo={exportModalConfig.summaryInfo}
+      />
+
+      {/* Fullscreen Expandable Image Lightbox Modal */}
+      {expandedImage && (
+        <div 
+          className="modal-overlay" 
+          onClick={() => setExpandedImage(null)} 
+          style={{ zIndex: 9999, background: 'rgba(0,0,0,0.85)', cursor: 'zoom-out', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setExpandedImage(null)}
+              style={{ position: 'absolute', top: '-40px', right: '0', background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer' }}
+              title="Close Preview"
+            >
+              <X size={28} />
+            </button>
+            <img 
+              src={expandedImage} 
+              alt="Expanded Preview" 
+              style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)', border: '2px solid #ffffff' }} 
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
